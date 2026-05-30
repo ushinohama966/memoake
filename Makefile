@@ -1,0 +1,6 @@
+.PHONY: build
+
+dev:
+	env -i HOME=$$HOME DISPLAY=$$DISPLAY XAUTHORITY=$$XAUTHORITY PATH=$$PATH cargo tauri dev
+build:
+	env -i HOME=$$HOME DISPLAY=$$DISPLAY XAUTHORITY=$$XAUTHORITY PATH=$$PATH cargo tauri build
