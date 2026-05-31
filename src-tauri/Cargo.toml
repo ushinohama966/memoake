@@ -27,5 +27,5 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 
-[patch.crates-io]
-tao = { path = "../../../dev/oss/tao/" }
+# [patch.crates-io]
+# tao = { path = "../../../dev/oss/tao/" }
