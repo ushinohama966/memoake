@@ -21,7 +21,7 @@
     const key = event.key.toLocaleLowerCase();
     switch (key) {
       case "escape":
-        if (currentMemo === undefined || activeId === null) return;
+        if (activeId === null) return;
         activeId = null;
         isConfirmingDelete = false;
         event.preventDefault();
@@ -51,12 +51,12 @@
         isConfirmingDelete = false;
         return;
       case "c":
+        if (activeId !== null) return;
         const newMemo: Memo = await invoke("create_memo", { content: "" });
         memos = [...memos, newMemo];
         activeId = newMemo.id;
         event.preventDefault();
         return;
-        break;
     }
 
     // 数字を指定してメモを選択して開く
@@ -72,11 +72,11 @@
     if (event.ctrlKey && event.key === "z") {
       event.preventDefault();
       document.execCommand("undo", false);
-      return
+      return;
     } else if (event.ctrlKey && event.key === "Z") {
       event.preventDefault();
       document.execCommand("redo", false);
-      return
+      return;
     }
   }
 
