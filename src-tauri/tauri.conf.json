@@ -33,7 +33,13 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "publisher": "CN=134e7ca2-77cb-4411-a232-81d75b2c179f"
+      "wix": {
+        "language": "ja-JP"
+      },
+      "msix": {
+        "targets": ["msix"],
+        "publisher": "CN=134e7ca2-77cb-4411-a232-81d75b2c179f"
+      }
     }
   }
 }
