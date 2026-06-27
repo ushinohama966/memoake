@@ -85,23 +85,36 @@ jobs:
           $appVersion = $tauriConfig.version
           
           # 2. 作業用ディレクトリの設定
-          $stageDir = "src-tauri/target/release/bundle/msix_stage"
-          $outDir = "src-tauri/target/release/bundle/msix"
+          $stageDir = (Resolve-Path ".").Path + "\src-tauri\target\release\bundle\msix_stage"
+          $outDir = (Resolve-Path ".").Path + "\src-tauri\target\release\bundle\msix"
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           
-          # 3. MSIから中身をアンパック（解凍）
+          # 3. MSIから中身を確実にアンパック（プロセス完了を同期的に待機）
           Write-Host "Unpacking MSI..."
-          msiexec /a $msiFile.FullName /qb TARGETDIR=(Resolve-Path $stageDir).Path
-          
-          # 💡 【重要】アンパックされた深い階層から memoake.exe を探し、ルート直下に移動・配置します
-          $exeFile = Get-ChildItem -Path "$stageDir\*.exe" -Recurse | Select-Object -First 1
-          if (-not $exeFile) { throw "memoake.exe not found inside the unpacked MSI!" }
-          if ($exeFile.DirectoryName -ne (Resolve-Path $stageDir).Path) {
-              Move-Item -Path $exeFile.FullName -Destination "$stageDir\memoake.exe" -Force
+          $msiProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList "/a `"$($msiFile.FullName)`" /qb TARGETDIR=`"$stageDir`"" -Wait -PassThru
+          if ($msiProcess.ExitCode -ne 0 -and $msiProcess.ExitCode -ne 1603) { 
+              throw "MSI unpack failed with exit code $($msiProcess.ExitCode)" 
           }
           
-          # 4. AppxManifest.xml の生成
+          # 💡 展開完了を念のため1秒待機
+          Start-Sleep -Seconds 1
+          
+          # 4. 展開された中身から.exeを全探索し、ルート直下にリネームして引っ張り出す
+          $exeFile = Get-ChildItem -Path "$stageDir" -Filter "*.exe" -Recurse | Select-Object -First 1
+          if (-not $exeFile) { 
+              Get-ChildItem -Path "$stageDir" -Recurse | Select-Object -Property FullName | Out-String | Write-Host
+              throw "No .exe file found inside the unpacked MSI!" 
+          }
+          
+          Write-Host "Found source executable: $($exeFile.FullName)"
+          # MakeAppxが確実に認識するよう、ルート直下に固定名「memoake.exe」として配置
+          $targetExePath = "$stageDir\memoake.exe"
+          if ($exeFile.FullName -ne $targetExePath) {
+              Copy-Item -Path $exeFile.FullName -Destination $targetExePath -Force
+          }
+          
+          # 5. AppxManifest.xml の生成
           $manifestContent = @"
           <?xml version="1.0" encoding="utf-8"?>
           <Package 
@@ -140,11 +153,11 @@ jobs:
           </Package>
           "@
           
-          # ダミーのアイコン画像（manifestに必須なため、Tauriのアイコンからコピー）
+          # アイコンのコピーとマニフェスト保存
           Copy-Item "src-tauri/icons/32x32.png" "$stageDir/icon.png" -ErrorAction SilentlyContinue
           $manifestContent | Set-Content "$stageDir/AppxManifest.xml" -Encoding UTF8
           
-          # 5. Windows SDK標準の MakeAppx で MSIX パッケージへと固める
+          # 6. Windows SDK標準の MakeAppx でパッケージング
           Write-Host "Packaging to MSIX using Windows SDK..."
           & "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\MakeAppx.exe" pack /d $stageDir /p "$outDir\memoake.msix" /o
           
