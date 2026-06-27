@@ -94,7 +94,14 @@ jobs:
           Write-Host "Unpacking MSI..."
           msiexec /a $msiFile.FullName /qb TARGETDIR=(Resolve-Path $stageDir).Path
           
-          # 4. MSIXに必要な「AppxManifest.xml」を修正（CapabilitiesとNamespaceを追加）
+          # 💡 【重要】アンパックされた深い階層から memoake.exe を探し、ルート直下に移動・配置します
+          $exeFile = Get-ChildItem -Path "$stageDir\*.exe" -Recurse | Select-Object -First 1
+          if (-not $exeFile) { throw "memoake.exe not found inside the unpacked MSI!" }
+          if ($exeFile.DirectoryName -ne (Resolve-Path $stageDir).Path) {
+              Move-Item -Path $exeFile.FullName -Destination "$stageDir\memoake.exe" -Force
+          }
+          
+          # 4. AppxManifest.xml の生成
           $manifestContent = @"
           <?xml version="1.0" encoding="utf-8"?>
           <Package 
