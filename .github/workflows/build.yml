@@ -94,23 +94,31 @@ jobs:
           Write-Host "Unpacking MSI..."
           msiexec /a $msiFile.FullName /qb TARGETDIR=(Resolve-Path $stageDir).Path
           
-          # 4. MSIXに必要な「AppxManifest.xml」をその場で最小構成で自動生成
-          # ストアにアップロードすれば、アイコンや残りの定義はストア側がこの値をベースに自動補完してくれます
+          # 4. MSIXに必要な「AppxManifest.xml」を修正（CapabilitiesとNamespaceを追加）
           $manifestContent = @"
           <?xml version="1.0" encoding="utf-8"?>
-          <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" IgnorableNamespaces="uap">
+          <Package 
+            xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" 
+            xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" 
+            xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+            IgnorableNamespaces="uap rescap">
+            
             <Identity Name="memoake" Publisher="CN=134e7ca2-77cb-4411-a232-81d75b2c179f" Version="$appVersion.0" ProcessorArchitecture="x64" />
+            
             <Properties>
               <DisplayName>memoake</DisplayName>
               <PublisherDisplayName>memoake</PublisherDisplayName>
               <Logo>icon.png</Logo>
             </Properties>
+            
             <Resources>
               <Resource Language="en-us"/>
             </Resources>
+            
             <Dependencies>
               <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22000.0" />
             </Dependencies>
+            
             <Applications>
               <Application Id="App" Executable="memoake.exe" EntryPoint="Windows.FullTrustApplication">
                 <uap:VisualElements DisplayName="memoake" Description="memoake" BackgroundColor="transparent" Square150x150Logo="icon.png" Square44x44Logo="icon.png">
@@ -118,8 +126,13 @@ jobs:
                 </uap:VisualElements>
               </Application>
             </Applications>
+            
+            <Capabilities>
+              <rescap:Capability Name="runFullTrust" />
+            </Capabilities>
           </Package>
           "@
+          
           # ダミーのアイコン画像（manifestに必須なため、Tauriのアイコンからコピー）
           Copy-Item "src-tauri/icons/32x32.png" "$stageDir/icon.png" -ErrorAction SilentlyContinue
           $manifestContent | Set-Content "$stageDir/AppxManifest.xml" -Encoding UTF8
@@ -128,6 +141,7 @@ jobs:
           Write-Host "Packaging to MSIX using Windows SDK..."
           & "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\MakeAppx.exe" pack /d $stageDir /p "$outDir\memoake.msix" /o
           
+          if ($LASTEXITCODE -ne 0) { throw "MakeAppx failed with exit code $LASTEXITCODE" }
           Write-Host "Successfully generated MSIX via standard Windows tools!"
 
       # 3. 【Windowsのみ】生成された .msix ファイルをリリースへ追加アップロード
