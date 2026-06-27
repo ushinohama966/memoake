@@ -73,49 +73,68 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      # 2. 【Windowsのみ】最新のMSIXHeroCLIを取得して .msi ➔ .msix へ自動変換
+      # 2. 【Windowsのみ】Windows標準のMSIXツールで安全にパッケージング
       - name: Convert MSI to MSIX (Windows only)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          # GitHub APIから最新リリースのダウンロードURLを動的に取得（404を完全回避）
-          $repo = "marcinotorowski/MSIXHeroCLI"
-          $url = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest").assets | 
-                 Where-Object { $_.name -like "*cli*.zip" -or $_.name -like "*MSIXHero*.zip" } | 
-                 Select-Object -ExpandProperty browser_download_url -First 1
-          
-          Write-Host "Downloading MSIXHero CLI from: $url"
-          Invoke-WebRequest -Uri $url -OutFile "msixhero.zip"
-          Expand-Archive -Path "msixhero.zip" -DestinationPath "msixhero-cli" -Force
-          
-          # .msi ファイルの探索
+          # 1. 成果物のパスとバージョンの取得
           $msiFile = Get-ChildItem -Path "src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
           if (-not $msiFile) { throw "MSI file not found!" }
-          
-          # パッケージバージョンの動的取得（tauri.conf.json から抽出）
           $tauriConfig = Get-Content "src-tauri/tauri.conf.json" | ConvertFrom-Json
           $appVersion = $tauriConfig.version
           
-          # 出力先ディレクトリの設定
-          New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix" | Out-Null
-          $msixOutput = (Resolve-Path "src-tauri/target/release/bundle/msix").Path + "\memoake.msix"
+          # 2. 作業用ディレクトリの設定
+          $stageDir = "src-tauri/target/release/bundle/msix_stage"
+          $outDir = "src-tauri/target/release/bundle/msix"
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           
-          # MSIXの生成（エスケープと変数参照を修正）
-          & "./msixhero-cli/msixhero.exe" pack `
-            --source "$($msiFile.FullName)" `
-            --output "$msixOutput" `
-            --package-name "memoake" `
-            --package-publisher "CN=134e7ca2-77cb-4411-a232-81d75b2c179f" `
-            --package-version "$appVersion"
-            
-          Write-Host "Successfully generated MSIX at: $msixOutput"
+          # 3. MSIから中身をアンパック（解凍）
+          Write-Host "Unpacking MSI..."
+          msiexec /a $msiFile.FullName /qb TARGETDIR=(Resolve-Path $stageDir).Path
+          
+          # 4. MSIXに必要な「AppxManifest.xml」をその場で最小構成で自動生成
+          # ストアにアップロードすれば、アイコンや残りの定義はストア側がこの値をベースに自動補完してくれます
+          $manifestContent = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" IgnorableNamespaces="uap">
+            <Identity Name="memoake" Publisher="CN=134e7ca2-77cb-4411-a232-81d75b2c179f" Version="$appVersion.0" ProcessorArchitecture="x64" />
+            <Properties>
+              <DisplayName>memoake</DisplayName>
+              <PublisherDisplayName>memoake</PublisherDisplayName>
+              <Logo>icon.png</Logo>
+            </Properties>
+            <Resources>
+              <Resource Language="en-us"/>
+            </Resources>
+            <Dependencies>
+              <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22000.0" />
+            </Dependencies>
+            <Applications>
+              <Application Id="App" Executable="memoake.exe" EntryPoint="Windows.FullTrustApplication">
+                <uap:VisualElements DisplayName="memoake" Description="memoake" BackgroundColor="transparent" Square150x150Logo="icon.png" Square44x44Logo="icon.png">
+                  <uap:DefaultTile Wide310x150Logo="icon.png" />
+                </uap:VisualElements>
+              </Application>
+            </Applications>
+          </Package>
+          "@
+          # ダミーのアイコン画像（manifestに必須なため、Tauriのアイコンからコピー）
+          Copy-Item "src-tauri/icons/32x32.png" "$stageDir/icon.png" -ErrorAction SilentlyContinue
+          $manifestContent | Set-Content "$stageDir/AppxManifest.xml" -Encoding UTF8
+          
+          # 5. Windows SDK標準の MakeAppx で MSIX パッケージへと固める
+          Write-Host "Packaging to MSIX using Windows SDK..."
+          & "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\MakeAppx.exe" pack /d $stageDir /p "$outDir\memoake.msix" /o
+          
+          Write-Host "Successfully generated MSIX via standard Windows tools!"
 
-      # 3. 【Windowsのみ】生成された .msix ファイルを既存のリリースへ追加アップロード
+      # 3. 【Windowsのみ】生成された .msix ファイルをリリースへ追加アップロード
       - name: Upload MSIX to GitHub Release (Windows only)
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          # tauri-actionが作成したタグを動的に追従
           tag_name: ${{ steps.tauri_build.outputs.releaseId == '' && 'app-v0.1.5' || format('app-v{0}', fromJson(steps.tauri_build.outputs.artifacts)[0].version) }}
           files: src-tauri/target/release/bundle/msix/memoake.msix
         env:
