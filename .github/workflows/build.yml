@@ -22,7 +22,7 @@ jobs:
           - platform: 'ubuntu-22.04'
             args: ''
           - platform: 'windows-latest'
-            args: '--bundles msix'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
