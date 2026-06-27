@@ -32,11 +32,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "wix": {
-      "language": "ja-JP"
-    },
-    "msix": {
-      "publisher": "CN=134e7ca2-77cb-4411-a232-81d75b2c179f"
+    "windows": {
+      "wix": {
+        "language": "ja-JP"
+      },
+      "msix": {
+        "publisher": "CN=134e7ca2-77cb-4411-a232-81d75b2c179f"
+      }
     }
   }
 }
