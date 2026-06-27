@@ -59,14 +59,52 @@ jobs:
       - name: install frontend dependencies
         run: yarn install
 
-      - uses: tauri-apps/tauri-action@v0.5
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_BUNDLER_TARGETS: ${{ matrix.platform == 'windows-latest' && 'msix' || '' }}
         with:
           tagName: app-v__VERSION__
           releaseName: 'App v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Convert MSI to MSIX (Windows only)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          # MSIXのパッケージングに必要な拡張CLIツールをダウンロード
+          Invoke-WebRequest -Uri "https://github.com/marcinotorowski/MSIXHeroCLI/releases/download/v1.1.0/msixhero-cli.zip" -OutFile "msixhero.zip"
+          Expand-Archive -Path "msixhero.zip" -DestinationPath "msixhero-cli"
+          
+          # Tauriがビルドした .msi ファイルのパスを自動探索
+          $msiFile = Get-ChildItem -Path "src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
+          if (-not $msiFile) { throw "MSI file not found!" }
+          
+          Write-Host "Found MSI: $($msiFile.FullName)"
+          
+          # MSIXの出力先ディレクトリを作成
+          New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix"
+          $msixOutput = "src-tauri/target/release/bundle/msix/memoake.msix"
+          
+          # MSIXHero CLIを使用して、MSIをMSIX構造に解凍・パッケージ変換
+          # ストアのPublisher名（CN=...）をここに埋め込みます
+          ./msixhero-cli/msixhero.exe pack `
+            --source "$($msiFile.FullName)" `
+            --output "$$msixOutput" `
+            --package-name "memoake" `
+            --package-publisher "CN=134e7ca2-77cb-4411-a232-81d75b2c179f" `
+            --package-version "0.1.5"
+            
+          Write-Host "Successfully generated MSIX at: $$msixOutput"
+
+      - name: Upload MSIX to GitHub Release (Windows only)
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v0.1.5
+          files: src-tauri/target/release/bundle/msix/memoake.msix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
