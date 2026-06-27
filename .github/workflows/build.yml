@@ -22,7 +22,7 @@ jobs:
           - platform: 'ubuntu-22.04'
             args: ''
           - platform: 'windows-latest'
-            args: ''
+            args: '--features tauri/msix'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -39,27 +39,6 @@ jobs:
         run: |
           git config --system core.longpaths true
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v "LongPathsEnabled" /t REG_DWORD /d 1 /f
-
-      - name: Modify tauri.conf.json for MSIX (Windows only)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          $configPath = "src-tauri/tauri.conf.json"
-          $json = Get-Content $configPath | ConvertFrom-Json
-          
-          $json.bundle.targets = "all"
-          
-          # ルート直下に plugins.bundler.msix を型安全に注入
-          $json | Add-Member -NotePropertyName "plugins" -NotePropertyValue @{
-              bundler = @{
-                  msix = @{
-                      publisher = "CN=134e7ca2-77cb-4411-a232-81d75b2c179f"
-                  }
-              }
-          }
-          
-          $json | ConvertTo-Json -Depth 10 | Set-Content $configPath
-          Write-Host "Successfully injected MSIX configuration safely into tauri.conf.json"
 
       - name: setup node
         uses: actions/setup-node@v4
