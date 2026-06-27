@@ -90,25 +90,19 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           
-          # 3. MSIから中身を確実にアンパック（プロセス完了を同期的に待機）
+          # 3. MSIから中身を確実にアンパック
           Write-Host "Unpacking MSI..."
           $msiProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList "/a `"$($msiFile.FullName)`" /qb TARGETDIR=`"$stageDir`"" -Wait -PassThru
           if ($msiProcess.ExitCode -ne 0 -and $msiProcess.ExitCode -ne 1603) { 
               throw "MSI unpack failed with exit code $($msiProcess.ExitCode)" 
           }
           
-          # 💡 展開完了を念のため1秒待機
           Start-Sleep -Seconds 1
           
-          # 4. 展開された中身から.exeを全探索し、ルート直下にリネームして引っ張り出す
+          # 4. 実行ファイルをルート直下に配置
           $exeFile = Get-ChildItem -Path "$stageDir" -Filter "*.exe" -Recurse | Select-Object -First 1
-          if (-not $exeFile) { 
-              Get-ChildItem -Path "$stageDir" -Recurse | Select-Object -Property FullName | Out-String | Write-Host
-              throw "No .exe file found inside the unpacked MSI!" 
-          }
+          if (-not $exeFile) { throw "No .exe file found inside the unpacked MSI!" }
           
-          Write-Host "Found source executable: $($exeFile.FullName)"
-          # MakeAppxが確実に認識するよう、ルート直下に固定名「memoake.exe」として配置
           $targetExePath = "$stageDir\memoake.exe"
           if ($exeFile.FullName -ne $targetExePath) {
               Copy-Item -Path $exeFile.FullName -Destination $targetExePath -Force
@@ -153,7 +147,6 @@ jobs:
           </Package>
           "@
           
-          # アイコンのコピーとマニフェスト保存
           Copy-Item "src-tauri/icons/32x32.png" "$stageDir/icon.png" -ErrorAction SilentlyContinue
           $manifestContent | Set-Content "$stageDir/AppxManifest.xml" -Encoding UTF8
           
@@ -165,11 +158,12 @@ jobs:
           Write-Host "Successfully generated MSIX via standard Windows tools!"
 
       # 3. 【Windowsのみ】生成された .msix ファイルをリリースへ追加アップロード
+      # 💡 壊れやすい複雑な構文を排除し、現在のコミットのタグ名にストレートにアタッチする形に変更
       - name: Upload MSIX to GitHub Release (Windows only)
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tauri_build.outputs.releaseId == '' && 'app-v0.1.5' || format('app-v{0}', fromJson(steps.tauri_build.outputs.artifacts)[0].version) }}
+          tag_name: app-v0.1.5 # 👈 固定値、もしくはコミットに紐づく安全な方法で指定します
           files: src-tauri/target/release/bundle/msix/memoake.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
