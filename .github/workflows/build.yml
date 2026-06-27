@@ -59,8 +59,10 @@ jobs:
       - name: install frontend dependencies
         run: yarn install
 
+      # 1. Tauri標準ビルド（.msi を安全に生成）
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0.5
+        id: tauri_build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -71,40 +73,50 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+      # 2. 【Windowsのみ】最新のMSIXHeroCLIを取得して .msi ➔ .msix へ自動変換
       - name: Convert MSI to MSIX (Windows only)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          # MSIXのパッケージングに必要な拡張CLIツールをダウンロード
-          Invoke-WebRequest -Uri "https://github.com/marcinotorowski/MSIXHeroCLI/releases/download/v1.1.0/msixhero-cli.zip" -OutFile "msixhero.zip"
-          Expand-Archive -Path "msixhero.zip" -DestinationPath "msixhero-cli"
+          # GitHub APIから最新リリースのダウンロードURLを動的に取得（404を完全回避）
+          $repo = "marcinotorowski/MSIXHeroCLI"
+          $url = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest").assets | 
+                 Where-Object { $_.name -like "*cli*.zip" -or $_.name -like "*MSIXHero*.zip" } | 
+                 Select-Object -ExpandProperty browser_download_url -First 1
           
-          # Tauriがビルドした .msi ファイルのパスを自動探索
+          Write-Host "Downloading MSIXHero CLI from: $url"
+          Invoke-WebRequest -Uri $url -OutFile "msixhero.zip"
+          Expand-Archive -Path "msixhero.zip" -DestinationPath "msixhero-cli" -Force
+          
+          # .msi ファイルの探索
           $msiFile = Get-ChildItem -Path "src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
           if (-not $msiFile) { throw "MSI file not found!" }
           
-          Write-Host "Found MSI: $($msiFile.FullName)"
+          # パッケージバージョンの動的取得（tauri.conf.json から抽出）
+          $tauriConfig = Get-Content "src-tauri/tauri.conf.json" | ConvertFrom-Json
+          $appVersion = $tauriConfig.version
           
-          # MSIXの出力先ディレクトリを作成
-          New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix"
-          $msixOutput = "src-tauri/target/release/bundle/msix/memoake.msix"
+          # 出力先ディレクトリの設定
+          New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix" | Out-Null
+          $msixOutput = (Resolve-Path "src-tauri/target/release/bundle/msix").Path + "\memoake.msix"
           
-          # MSIXHero CLIを使用して、MSIをMSIX構造に解凍・パッケージ変換
-          # ストアのPublisher名（CN=...）をここに埋め込みます
-          ./msixhero-cli/msixhero.exe pack `
+          # MSIXの生成（エスケープと変数参照を修正）
+          & "./msixhero-cli/msixhero.exe" pack `
             --source "$($msiFile.FullName)" `
-            --output "$$msixOutput" `
+            --output "$msixOutput" `
             --package-name "memoake" `
             --package-publisher "CN=134e7ca2-77cb-4411-a232-81d75b2c179f" `
-            --package-version "0.1.5"
+            --package-version "$appVersion"
             
-          Write-Host "Successfully generated MSIX at: $$msixOutput"
+          Write-Host "Successfully generated MSIX at: $msixOutput"
 
+      # 3. 【Windowsのみ】生成された .msix ファイルを既存のリリースへ追加アップロード
       - name: Upload MSIX to GitHub Release (Windows only)
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: app-v0.1.5
+          # tauri-actionが作成したタグを動的に追従
+          tag_name: ${{ steps.tauri_build.outputs.releaseId == '' && 'app-v0.1.5' || format('app-v{0}', fromJson(steps.tauri_build.outputs.artifacts)[0].version) }}
           files: src-tauri/target/release/bundle/msix/memoake.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
