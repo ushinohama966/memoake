@@ -20,3 +20,6 @@ build:
 
 clean:
 	rm -rf ./build ./src-tauri/target
+
+build-cli:
+	cd src-tauri && cargo build --bin memoake-cli --release
