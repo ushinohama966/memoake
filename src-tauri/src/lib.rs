@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
-mod db;
+pub mod db;
 
 struct WindowState {
     is_visible: Mutex<bool>,
@@ -19,49 +19,14 @@ pub struct Memo {
 #[tauri::command]
 fn get_all_memo(app_handle: tauri::AppHandle) -> Result<Vec<Memo>, String> {
     let conn = db::connect_db(&app_handle)?;
-
-    let mut stmt_m = conn
-        .prepare("SELECT id, content, created_at, updated_at FROM memo")
-        .map_err(|e| e.to_string())?;
-
-    let memo_iter = stmt_m
-        .query_map([], |row| {
-            Ok(Memo {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                created_at: row.get(2)?,
-                updated_at: row.get(3)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
-    let memos: Result<Vec<Memo>, _> = memo_iter.collect();
-    let memos = memos.map_err(|e| e.to_string())?;
-
+    let memos = db::get_all_memo(conn)?;
     Ok(memos)
 }
 
 #[tauri::command]
 fn create_memo(content: &str, app_handle: tauri::AppHandle) -> Result<Memo, String> {
     let conn = db::connect_db(&app_handle)?;
-
-    let mut stmt = conn
-        .prepare(
-            "INSERT INTO memo (content) VALUES (?1) RETURNING id, content, created_at, updated_at",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let new_memo = stmt
-        .query_row([content], |row| {
-            Ok(Memo {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                created_at: row.get(2)?,
-                updated_at: row.get(3)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
+    let new_memo = db::create_memo(conn, content)?;
     Ok(new_memo)
 }
 
