@@ -13,6 +13,7 @@ permissions:
   deployments: write
   pages: write
   statuses: write
+  packages: write
 
 jobs:
   publish-tauri:
