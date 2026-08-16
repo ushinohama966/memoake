@@ -7,6 +7,13 @@ on:
       - 'src-tauri/tauri.conf.json'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+  deployments: write
+  pages: write
+  statuses: write
+
 jobs:
   publish-tauri:
     permissions:
