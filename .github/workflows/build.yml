@@ -121,7 +121,7 @@ jobs:
             
             <Properties>
               <DisplayName>memoake</DisplayName>
-              <PublisherDisplayName>memoake</PublisherDisplayName>
+              <PublisherDisplayName>UshDev</PublisherDisplayName>
               <Logo>icon.png</Logo>
             </Properties>
             
