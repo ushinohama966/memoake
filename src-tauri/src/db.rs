@@ -1,21 +1,23 @@
 use std::{fs, path::Path};
 
 use rusqlite::{Connection, Result};
-use tauri::Manager;
 
 use crate::Memo;
 
-pub fn connect_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
-    let mut app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+pub fn get_default_db_path() -> Result<std::path::PathBuf, String> {
+    let proj_dirs = directories::ProjectDirs::from("", "", "com.memoake.app")
+        .ok_or_else(|| "Failed to get project directory".to_string())?;
+
+    Ok(proj_dirs.data_dir().join("memoake.db"))
+}
+
+pub fn connect_db() -> Result<Connection, String> {
+    let app_dir = get_default_db_path()?;
 
     if !app_dir.exists() {
         fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
     }
 
-    app_dir.push("memoake.db");
     connect_db_at_path(app_dir.as_path())
 }
 
@@ -28,8 +30,8 @@ pub fn connect_db_at_path(path: &Path) -> Result<Connection, String> {
     Connection::open(path).map_err(|e| e.to_string())
 }
 
-pub fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> {
-    let conn = connect_db(app_handle).map_err(|e| e.to_string())?;
+pub fn init_database() -> Result<(), String> {
+    let conn = connect_db().map_err(|e| e.to_string())?;
 
     conn.execute_batch(
         "
@@ -115,4 +117,29 @@ pub fn create_memo(conn: Connection, content: &str) -> Result<Memo, String> {
         .map_err(|e| e.to_string())?;
 
     Ok(new_memo)
+}
+
+pub fn update_memo(conn: Connection, id: i64, content: &str) -> Result<Memo, String> {
+    let mut stmt = conn
+        .prepare("UPDATE memo set content = ?1 where id = ?2 RETURNING id, content, created_at, updated_at")
+        .map_err(|e| e.to_string())?;
+
+    let updated_memo = stmt
+        .query_row((content, id), |row| {
+            Ok(Memo {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(updated_memo)
+}
+
+pub fn delete_memo(conn: Connection, id: i64) -> Result<(), String> {
+    conn.execute("DELETE FROM memo where id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
   interface Memo {
     id: number;
@@ -13,9 +14,33 @@
   let currentMemo = $derived(memos.find((p) => p.id === activeId));
   let isConfirmingDelete = $state(false);
 
+  let unlisten: UnlistenFn | null = null;
+
   const getTitle = (content: string) => {
     return content.trim().split("\n")[0] || "No title";
   };
+
+  async function loadNotes() {
+    try {
+      // invoke で Rust 側のデータ取得コマンドを呼ぶ
+      // notes = await invoke('get_notes');
+      const fetchedMemos: Memo[] = await invoke("get_all_memos");
+      memos = fetchedMemos;
+
+      // activeId がある場合、新しい配列から対象の参照を取り直し、currentMemo を更新する
+      if (activeId !== null) {
+        const found = memos.find((m) => m.id === activeId);
+        if (found) {
+          // 必要に応じて編集中のテキストが上書きされないよう制御
+        } else {
+          activeId = null; // 外部で削除された場合
+        }
+      }
+      console.log("DBが更新されたため、データを再取得しました。");
+    } catch (err) {
+      console.error("Failed to load notes:", err);
+    }
+  }
 
   async function handleKeyDown(event: KeyboardEvent) {
     const key = event.key.toLocaleLowerCase();
@@ -102,10 +127,30 @@
     }
   });
 
-  $effect.pre(() => {
-    async function getAllMemos() {
-      memos = await invoke("get_all_memo");
+  $effect(() => {
+    // イベントリスナーのセットアップ
+    async function setupListener() {
+      unlisten = await listen("db-changed", () => {
+        // Rust から "db-changed" イベントが届いたら再描画処理を走らせる
+        loadNotes();
+      });
     }
+
+    setupListener();
+    // loadNotes(); // 初回ロード
+
+    // クリーンアップ関数（コンポーネントが破棄されたときに実行）
+    return () => {
+      if (unlisten) unlisten();
+    };
+  });
+
+  async function getAllMemos() {
+    memos = await invoke("get_all_memo");
+  }
+
+  // TODO: 他のAPIでデータに変更が会った場合に、再度全件取得する
+  $effect.pre(() => {
     getAllMemos();
   });
 </script>

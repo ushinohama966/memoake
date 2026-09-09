@@ -1,23 +1,7 @@
-use directories::BaseDirs;
 use memoake_lib::db;
 
-use std::{
-    env::args,
-    io::{self, Read},
-    path::PathBuf,
-};
-
-fn get_db_path() -> PathBuf {
-    let base_dirs = BaseDirs::new().expect("failed to get home directory");
-
-    base_dirs
-        .data_dir()
-        .join("com.memoake.app")
-        .join("memoake.db")
-}
-
 fn main() {
-    let db_path = get_db_path();
+    let db_path = db::get_default_db_path().expect("failed to get default db path");
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage: memoake-cli <command> <content>");
@@ -48,6 +32,25 @@ fn main() {
             let memo = db::create_memo(conn, content).unwrap();
 
             println!("success to create memo, id: {}", memo.id);
+        }
+        "update" => {
+            if args.len() < 4 {
+                println!("Usage: memoake-cli update <id> <content>");
+                return;
+            }
+            let id: i64 = args[2].parse().expect("failed to parse id");
+            let content = &args[3];
+            let memo = db::update_memo(conn, id, content).unwrap();
+
+            println!("success to update memo, id: {}", memo.id);
+        }
+        "delete" => {
+            if args.len() < 3 {
+                println!("Usage: memoake-cli delete <id>");
+                return;
+            }
+            let id: i64 = args[2].parse().expect("failed to parse id");
+            db::delete_memo(conn, id).unwrap();
         }
         _ => println!("Unknown command"),
     }

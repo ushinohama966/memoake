@@ -171,6 +171,62 @@ function M.open_tui()
 			close_all()
 			M.open_memoake()
 		end, opts)
+
+		-- e: 選択中メモの編集
+		vim.keymap.set("n", "e", function()
+			if #memos == 0 then
+				return
+			end
+			local cursor = vim.api.nvim_win_get_cursor(list_win)
+			local selected = memos[cursor[1]]
+			if not selected then
+				return
+			end
+
+			close_all()
+			-- 編集用のフローティングウィンドウを開く
+			local width = 60
+			local height = 6
+			local buf = vim.api.nvim_create_buf(false, true)
+
+			local win = vim.api.nvim_open_win(buf, true, {
+				relative = "editor",
+				width = width,
+				height = height,
+				col = (vim.o.columns - width) / 2,
+				row = (vim.o.lines - height) / 2,
+				style = "minimal",
+				border = "rounded",
+				title = " Edit Memo ID: " .. selected.id .. " (<Ctrl+S> to Save) ",
+				title_pos = "center",
+			})
+
+			-- 元の内容をバッファにセット
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(selected.content, "\n"))
+
+			-- Ctrl+S または Enter で保存
+			local function save()
+				local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+				local text = table.concat(lines, "\n")
+
+				if #text > 0 then
+					vim.system({ "memoake-cli", "update", tostring(selected.id), text }, { text = true }, function(obj)
+						vim.schedule(function()
+							if obj.code == 0 then
+								vim.notify("Memo updated!", vim.log.levels.INFO)
+								M.open_tui() -- 保存後に Lazygit UI を開く
+							end
+						end)
+					end)
+				end
+				if vim.api.nvim_win_is_valid(win) then
+					vim.api.nvim_win_close(win, true)
+				end
+			end
+
+			vim.keymap.set({ "n", "i" }, "<C-s>", save, { buffer = buf, silent = true })
+			vim.cmd("startinsert")
+		end, opts)
 	end)
 end
 

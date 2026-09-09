@@ -1,5 +1,7 @@
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::{eprintln, sync::Mutex};
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
 pub mod db;
@@ -16,48 +18,67 @@ pub struct Memo {
     pub updated_at: String,
 }
 
+pub fn watch_db_file(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let db_path = db::get_default_db_path()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
+            Ok(event) => {
+                if let EventKind::Modify(_) = event.kind {
+                    if let Err(err) = tx.send(()) {
+                        eprintln!("Failed to send event: {}", err);
+                    }
+                }
+            }
+            Err(e) => eprintln!("watch error: {:?}", e),
+        })
+        .map_err(|e| e.to_string())?;
+
+    watcher
+        .watch(&db_path, RecursiveMode::NonRecursive)
+        .map_err(|e| e.to_string())?;
+
+    std::thread::spawn(move || {
+        while let Ok(_) = rx.recv() {
+            // if let Some(window) = app_handle.get_window("main") {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                window.emit("db-changed", {}).unwrap_or_else(|err| {
+                    eprintln!("Failed to emit event: {}", err);
+                });
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
-fn get_all_memo(app_handle: tauri::AppHandle) -> Result<Vec<Memo>, String> {
-    let conn = db::connect_db(&app_handle)?;
+fn get_all_memo(_app_handle: tauri::AppHandle) -> Result<Vec<Memo>, String> {
+    let conn = db::connect_db()?;
     let memos = db::get_all_memo(conn)?;
     Ok(memos)
 }
 
 #[tauri::command]
-fn create_memo(content: &str, app_handle: tauri::AppHandle) -> Result<Memo, String> {
-    let conn = db::connect_db(&app_handle)?;
+fn create_memo(content: &str, _app_handle: tauri::AppHandle) -> Result<Memo, String> {
+    let conn = db::connect_db()?;
     let new_memo = db::create_memo(conn, content)?;
     Ok(new_memo)
 }
 
 #[tauri::command]
-fn update_memo(id: i64, content: &str, app_handle: tauri::AppHandle) -> Result<Memo, String> {
-    let conn = db::connect_db(&app_handle)?;
-
-    let mut stmt = conn
-        .prepare("UPDATE memo set content = ?1 where id = ?2 RETURNING id, content, created_at, updated_at")
-        .map_err(|e| e.to_string())?;
-
-    let updated_memo = stmt
-        .query_row((content, id), |row| {
-            Ok(Memo {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                created_at: row.get(2)?,
-                updated_at: row.get(3)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
+fn update_memo(id: i64, content: &str, _app_handle: tauri::AppHandle) -> Result<Memo, String> {
+    let conn = db::connect_db()?;
+    let updated_memo = db::update_memo(conn, id, content)?;
 
     Ok(updated_memo)
 }
 
 #[tauri::command]
-fn delete_memo(id: i64, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let conn = db::connect_db(&app_handle)?;
-
-    conn.execute("DELETE FROM memo where id = ?1", [id])
-        .map_err(|e| e.to_string())?;
+fn delete_memo(id: i64, _app_handle: tauri::AppHandle) -> Result<(), String> {
+    let conn = db::connect_db()?;
+    db::delete_memo(conn, id)?;
 
     Ok(())
 }
@@ -138,12 +159,18 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
                 let _ = app.global_shortcut().register(toggle_shortcut);
-                if let Err(err_msg) = db::init_database(app.handle()) {
+                if let Err(err_msg) = db::init_database() {
                     return Err(Box::new(std::io::Error::new(
                         std::io::ErrorKind::Other,
                         err_msg,
                     )));
-                }
+                };
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err_msg) = watch_db_file(handle) {
+                        eprintln!("Failed to start db file watcher: {}", err_msg);
+                    }
+                });
                 Ok(())
             }
         })
