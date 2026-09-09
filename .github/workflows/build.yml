@@ -128,7 +128,7 @@ jobs:
             <Identity Name="UshDev.Memoake-msix" Publisher="CN=C70DAF3D-438C-471C-9397-E94185F40B45" Version="$appVersion.0" ProcessorArchitecture="x64" />
             
             <Properties>
-              <DisplayName>UshDev.Memoake-msix</DisplayName>
+              <DisplayName>Memoake</DisplayName>
               <PublisherDisplayName>UshDev</PublisherDisplayName>
               <Logo>icon.png</Logo>
             </Properties>
@@ -143,7 +143,7 @@ jobs:
             
             <Applications>
               <Application Id="App" Executable="memoake.exe" EntryPoint="Windows.FullTrustApplication">
-                <uap:VisualElements DisplayName="UshDev.Memoake-msix" Description="Memoake" BackgroundColor="transparent" Square150x150Logo="icon.png" Square44x44Logo="icon.png">
+                <uap:VisualElements DisplayName="Memoake" Description="Memoake" BackgroundColor="transparent" Square150x150Logo="icon.png" Square44x44Logo="icon.png">
                   <uap:DefaultTile Wide310x150Logo="icon.png" />
                 </uap:VisualElements>
               </Application>
