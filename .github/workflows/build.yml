@@ -128,7 +128,7 @@ jobs:
             <Identity Name="UshDev.Memoake-msix" Publisher="CN=C70DAF3D-438C-471C-9397-E94185F40B45" Version="$appVersion.0" ProcessorArchitecture="x64" />
             
             <Properties>
-              <DisplayName>Memoake</DisplayName>
+              <DisplayName>Memoake-msix</DisplayName>
               <PublisherDisplayName>UshDev</PublisherDisplayName>
               <Logo>icon.png</Logo>
             </Properties>
