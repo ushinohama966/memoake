@@ -171,7 +171,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: app-v0.1.5 # 👈 固定値、もしくはコミットに紐づく安全な方法で指定します
+          tag_name: app-v${{ steps.tauri_build.outputs.appVersion }}
           files: src-tauri/target/release/bundle/msix/memoake.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
